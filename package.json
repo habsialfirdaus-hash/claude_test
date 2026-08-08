@@ -1,0 +1,16 @@
+{
+  "name": "xyzflyfit-supabase",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Koneksi Supabase untuk xyzflyfit",
+  "scripts": {
+    "check": "node scripts/check-connection.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.5"
+  }
+}
