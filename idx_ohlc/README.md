@@ -57,6 +57,27 @@ Kode tanpa titik otomatis diberi akhiran `.JK` (mis. `BBCA` → `BBCA.JK`).
 
 Kolom: `ticker,date,open,high,low,close,adj_close,volume`
 
+## Indikator HARSI (Heikin Ashi RSI Oscillator)
+
+`harsi.py` adalah porting dari Pine Script v4 "Heikin Ashi RSI Oscillator"
+(JayRogers) ke Python. Dipakai langsung pada CSV OHLC di atas.
+
+Butuh `pandas` + `numpy` (dan `matplotlib` bila mau plot):
+
+```bash
+pip install pandas numpy matplotlib
+
+# hitung indikator dari CSV OHLC
+python harsi.py ohlc_idx.csv --ticker BBCA.JK --out harsi_bbca.csv
+
+# sekaligus buat grafik PNG
+python harsi.py ohlc_idx.csv --ticker BBCA.JK --plot harsi_bbca.png
+```
+
+Keluaran: candle HARSI (`harsi_open/high/low/close`), garis `rsi`, dan
+`stoch_k`/`stoch_d`. Semua parameter default = default indikator TradingView
+(`--len-harsi 14 --smoothing 1 --source ohlc4 --len-rsi 7 --stoch-len 14`, dst).
+
 ## Uji cepat Apps Script (tanpa Python)
 
 Buka URL ini di browser setelah deploy:
