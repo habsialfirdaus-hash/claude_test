@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, Trexa"
 #property link      "https://Trexa.id"
-#property version   "1.20"
+#property version   "1.30"
 
 /*
    Versi lengkap & sudah bisa di-compile (MQL5).
@@ -31,8 +31,24 @@ input    int      IN_TrailingStep  = 10;       //Trailing Step PO (points)
 input    int      IN_SL            = 0;        //Stop Loss (points, 0 = nonaktif)
 input    int      IN_TP            = 0;        //Take Profit (points, 0 = nonaktif)
 
+input    group    "=== Filter Anti-Sideways ==="
+input ENUM_TIMEFRAMES IN_FilterTF  = PERIOD_M15; //Timeframe filter
+input    bool     IN_UseADX        = true;     //Pakai filter ADX (trend)
+input    int      IN_ADXPeriod     = 14;       //Periode ADX
+input    double   IN_ADXMin        = 23.0;     //ADX minimal (trending jika >= nilai ini)
+input    bool     IN_UseATR        = false;    //Pakai filter ATR (volatilitas)
+input    int      IN_ATRPeriod     = 14;       //Periode ATR
+input    int      IN_ATRMinPoints  = 0;        //ATR minimal (points)
+input    bool     IN_UseTime       = false;    //Pakai filter jam (waktu server)
+input    int      IN_StartHour     = 8;        //Jam mulai (0-23)
+input    int      IN_EndHour       = 22;       //Jam selesai (0-23)
+
 // Menyimpan tiket posisi "pertama" (yang akan ditutup saat terjadi reversal).
 ulong runningTicket = 0;
+
+// Handle indikator filter.
+int hADX = INVALID_HANDLE;
+int hATR = INVALID_HANDLE;
 
 //+------------------------------------------------------------------+
 //| Hitung SL & TP relatif terhadap harga entry (0 jika nonaktif)    |
@@ -64,6 +80,26 @@ int OnInit()
    oTrade.SetDeviationInPoints(10);
    oTrade.SetTypeFillingBySymbol(Symbol());
 
+//--- siapkan indikator filter
+   if(IN_UseADX)
+     {
+      hADX = iADX(Symbol(), IN_FilterTF, IN_ADXPeriod);
+      if(hADX == INVALID_HANDLE)
+        {
+         Print("Gagal membuat handle ADX");
+         return(INIT_FAILED);
+        }
+     }
+   if(IN_UseATR)
+     {
+      hATR = iATR(Symbol(), IN_FilterTF, IN_ATRPeriod);
+      if(hATR == INVALID_HANDLE)
+        {
+         Print("Gagal membuat handle ATR");
+         return(INIT_FAILED);
+        }
+     }
+
 //---
    return(INIT_SUCCEEDED);
   }
@@ -73,7 +109,52 @@ int OnInit()
 void OnDeinit(const int reason)
   {
 //---
+   if(hADX != INVALID_HANDLE) IndicatorRelease(hADX);
+   if(hATR != INVALID_HANDLE) IndicatorRelease(hATR);
+  }
+//+------------------------------------------------------------------+
+//| Cek apakah pasar layak dibuka posisi baru (lolos semua filter)   |
+//| return true = boleh buka straddle baru; false = tunggu           |
+//+------------------------------------------------------------------+
+bool marketOK()
+  {
+   //--- Filter jam (waktu server)
+   if(IN_UseTime)
+     {
+      MqlDateTime dt;
+      TimeToStruct(TimeCurrent(), dt);
+      int h = dt.hour;
+      bool inWindow;
+      if(IN_StartHour <= IN_EndHour)
+         inWindow = (h >= IN_StartHour && h < IN_EndHour);
+      else // rentang melewati tengah malam, mis. 22 -> 6
+         inWindow = (h >= IN_StartHour || h < IN_EndHour);
+      if(!inWindow)
+         return false;
+     }
 
+   //--- Filter ADX: hanya trading saat pasar trending
+   if(IN_UseADX)
+     {
+      double adx[];
+      if(CopyBuffer(hADX, 0, 0, 1, adx) < 1) // buffer 0 = garis ADX utama
+         return false;                        // data belum siap -> jangan trading
+      if(adx[0] < IN_ADXMin)
+         return false;                        // pasar sideways
+     }
+
+   //--- Filter ATR: hanya trading saat volatilitas cukup
+   if(IN_UseATR && IN_ATRMinPoints > 0)
+     {
+      double atr[];
+      if(CopyBuffer(hATR, 0, 0, 1, atr) < 1)
+         return false;
+      double atrPoints = atr[0] / oSym.Point();
+      if(atrPoints < IN_ATRMinPoints)
+         return false;
+     }
+
+   return true;
   }
 //+------------------------------------------------------------------+
 //| Expert tick function                                             |
@@ -100,9 +181,16 @@ void ManagePO()
 
    double sl = 0.0, tp = 0.0;
 
-   //--- Kondisi awal: belum ada posisi & belum ada pending -> pasang straddle
+   //--- Status filter & siklus
+   bool inCycle    = (ticketBuy > 0 || ticketSell > 0); // sudah ada posisi terbuka
+   bool canOpenNew = marketOK();                        // pasar lolos filter anti-sideways
+
+   //--- Kondisi awal: belum ada posisi & belum ada pending -> pasang straddle (difilter)
    if(priceBuyStop == 0 && priceSellStop == 0 && ticketBuy == 0 && ticketSell == 0)
      {
+      if(!canOpenNew)
+         return; // pasar sideways / di luar jam -> tunggu, jangan pasang straddle
+
       double vol     = IN_Lot;
       double hargaPO  = oSym.Ask() + (IN_DistancePO / 2 * point);
       calcSLTP(true, hargaPO, point, sl, tp);
@@ -115,7 +203,8 @@ void ManagePO()
      }
 
    //--- Jika BuyStop hilang & belum ada posisi Buy -> pasang ulang BuyStop
-   if(priceBuyStop == 0 && ticketBuy == 0)
+   //    (saat sedang dalam siklus, penggantian tetap dibolehkan agar reversal berfungsi)
+   if(priceBuyStop == 0 && ticketBuy == 0 && (inCycle || canOpenNew))
      {
       double vol     = IN_Lot;
       double hargaPO  = oSym.Ask() + (IN_DistancePO * point);
@@ -124,7 +213,7 @@ void ManagePO()
      }
 
    //--- Jika SellStop hilang & belum ada posisi Sell -> pasang ulang SellStop
-   if(priceSellStop == 0 && ticketSell == 0)
+   if(priceSellStop == 0 && ticketSell == 0 && (inCycle || canOpenNew))
      {
       double vol     = IN_Lot;
       double hargaPO  = oSym.Bid() - (IN_DistancePO * point);
