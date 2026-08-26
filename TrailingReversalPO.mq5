@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, Trexa"
 #property link      "https://Trexa.id"
-#property version   "1.10"
+#property version   "1.20"
 
 /*
    Versi lengkap & sudah bisa di-compile (MQL5).
@@ -28,9 +28,30 @@ input    double   IN_Lot           = 0.01;     //Lot Size
 input    int      IN_DistancePO    = 500;      //Jarak PO (points)
 input    int      IN_TrailingStart = 300;      //Trailing Start PO (points)
 input    int      IN_TrailingStep  = 10;       //Trailing Step PO (points)
+input    int      IN_SL            = 0;        //Stop Loss (points, 0 = nonaktif)
+input    int      IN_TP            = 0;        //Take Profit (points, 0 = nonaktif)
 
 // Menyimpan tiket posisi "pertama" (yang akan ditutup saat terjadi reversal).
 ulong runningTicket = 0;
+
+//+------------------------------------------------------------------+
+//| Hitung SL & TP relatif terhadap harga entry (0 jika nonaktif)    |
+//+------------------------------------------------------------------+
+void calcSLTP(const bool isBuy, const double price, const double point, double &sl, double &tp)
+  {
+   sl = 0.0;
+   tp = 0.0;
+   if(isBuy)
+     {
+      if(IN_SL > 0) sl = price - (IN_SL * point);
+      if(IN_TP > 0) tp = price + (IN_TP * point);
+     }
+   else
+     {
+      if(IN_SL > 0) sl = price + (IN_SL * point);
+      if(IN_TP > 0) tp = price - (IN_TP * point);
+     }
+  }
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -84,9 +105,11 @@ void ManagePO()
      {
       double vol     = IN_Lot;
       double hargaPO  = oSym.Ask() + (IN_DistancePO / 2 * point);
+      calcSLTP(true, hargaPO, point, sl, tp);
       oTrade.BuyStop(vol, hargaPO, pair, sl, tp, ORDER_TIME_DAY);
 
       hargaPO = hargaPO - (IN_DistancePO * point);
+      calcSLTP(false, hargaPO, point, sl, tp);
       oTrade.SellStop(vol, hargaPO, pair, sl, tp, ORDER_TIME_DAY);
       return;
      }
@@ -96,6 +119,7 @@ void ManagePO()
      {
       double vol     = IN_Lot;
       double hargaPO  = oSym.Ask() + (IN_DistancePO * point);
+      calcSLTP(true, hargaPO, point, sl, tp);
       oTrade.BuyStop(vol, hargaPO, pair, sl, tp, ORDER_TIME_DAY);
      }
 
@@ -104,6 +128,7 @@ void ManagePO()
      {
       double vol     = IN_Lot;
       double hargaPO  = oSym.Bid() - (IN_DistancePO * point);
+      calcSLTP(false, hargaPO, point, sl, tp);
       oTrade.SellStop(vol, hargaPO, pair, sl, tp, ORDER_TIME_DAY);
      }
 
@@ -161,6 +186,7 @@ void trailingPO()
             if(hargaPO - ((IN_TrailingStart + IN_TrailingStep) * point) >= Bid)
               {
                hargaPO = Bid + (IN_TrailingStart * point);
+               calcSLTP(true, hargaPO, point, sl, tp);
                if(!oTrade.OrderModify(ticket, hargaPO, sl, tp, ORDER_TIME_DAY, 0))
                   Print("Gagal Geser PO (BuyStop)");
               }
@@ -172,6 +198,7 @@ void trailingPO()
             if(hargaPO + ((IN_TrailingStart + IN_TrailingStep) * point) <= Ask)
               {
                hargaPO = Ask - (IN_TrailingStart * point);
+               calcSLTP(false, hargaPO, point, sl, tp);
                if(!oTrade.OrderModify(ticket, hargaPO, sl, tp, ORDER_TIME_DAY, 0))
                   Print("Gagal Geser PO (SellStop)");
               }
