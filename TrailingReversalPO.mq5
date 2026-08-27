@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, Trexa"
 #property link      "https://Trexa.id"
-#property version   "1.50"
+#property version   "1.60"
 
 /*
    Versi lengkap & sudah bisa di-compile (MQL5).
@@ -23,12 +23,13 @@
 CTrade      oTrade;
 CSymbolInfo oSym;
 
-// Nilai default di-tuning dari backtest ~3 bulan data M1 (XAUUSD 3-digit).
-// PENTING: jarak optimal tergantung SPREAD symbol. Dua preset:
+// DEFAULT: Mode Candle Breakout (IN_UseCandle=true) -> BuyStop/SellStop
+// mengacu pada high/low candle (default H4). Hasil backtest terbaik
+// (XAUUSDc ~3 bln: PF ~1.6, DD lebih kecil dari mode jarak-tetap).
+// Parameter IN_DistancePO/IN_TrailingStart di bawah HANYA dipakai kalau
+// IN_UseCandle=false (mode jarak-tetap). Preset jarak-tetap:
 //   * XAUUSD  (spread ~90 pts) : D=6000,  TrailingStart=3600,  Step=200
-//   * XAUUSDc (spread ~260 pts): D=25000, TrailingStart=15000, Step=300  <-- default
-// Default di bawah = preset akun CENT (spread lebar). Ganti ke preset
-// standar bila memakai symbol XAUUSD biasa.
+//   * XAUUSDc (spread ~260 pts): D=25000, TrailingStart=15000, Step=300
 input    int      IN_MagicNumber   = 123;      //Magic Number
 input    double   IN_Lot           = 0.01;     //Lot Size
 input    int      IN_DistancePO    = 25000;    //Jarak PO (points) - XAUUSDc (cent)
@@ -48,6 +49,12 @@ input    int      IN_ATRMinPoints  = 0;        //ATR minimal (points)
 input    bool     IN_UseTime       = false;    //Pakai filter jam (waktu server)
 input    int      IN_StartHour     = 8;        //Jam mulai (0-23)
 input    int      IN_EndHour       = 22;       //Jam selesai (0-23)
+
+input    group    "=== Mode Candle Breakout ==="
+input    bool     IN_UseCandle     = true;     //Acuan PO dari high/low candle (bukan jarak tetap)
+input ENUM_TIMEFRAMES IN_CandleTF  = PERIOD_H4; //Timeframe candle acuan
+input    int      IN_CandleLookback= 1;        //Jumlah candle (highest-high / lowest-low)
+input    int      IN_CandleBuffer  = 200;      //Buffer di atas high / bawah low (points)
 
 // Menyimpan tiket posisi "pertama" (yang akan ditutup saat terjadi reversal).
 ulong runningTicket = 0;
@@ -163,6 +170,124 @@ bool marketOK()
    return true;
   }
 //+------------------------------------------------------------------+
+//| Ambil tiket pending BuyStop & SellStop milik EA ini              |
+//+------------------------------------------------------------------+
+void getTicketPO(ulong &tBuyStop, ulong &tSellStop)
+  {
+   string pair = oSym.Name();
+   tBuyStop = tSellStop = 0;
+   int tOrders = OrdersTotal();
+   for(int i = tOrders - 1; i >= 0; i--)
+     {
+      ulong ticket = OrderGetTicket(i);
+      if(ticket <= 0) continue;
+      if(OrderGetInteger(ORDER_MAGIC) == IN_MagicNumber && OrderGetString(ORDER_SYMBOL) == pair)
+        {
+         long type = OrderGetInteger(ORDER_TYPE);
+         if(type == ORDER_TYPE_BUY_STOP)  tBuyStop  = ticket;
+         if(type == ORDER_TYPE_SELL_STOP) tSellStop = ticket;
+        }
+     }
+  }
+//+------------------------------------------------------------------+
+//| Hitung level breakout dari high/low candle acuan                 |
+//| buyLevel = highest-high + buffer ; sellLevel = lowest-low - buf  |
+//+------------------------------------------------------------------+
+bool getCandleLevels(double &buyLevel, double &sellLevel)
+  {
+   int need = MathMax(1, IN_CandleLookback);
+   double hi[], lo[];
+   //--- mulai dari shift 1 = hanya candle yang SUDAH tertutup
+   if(CopyHigh(Symbol(), IN_CandleTF, 1, need, hi) < need) return false;
+   if(CopyLow(Symbol(),  IN_CandleTF, 1, need, lo) < need) return false;
+   double hh = hi[0], ll = lo[0];
+   for(int i = 1; i < need; i++)
+     {
+      if(hi[i] > hh) hh = hi[i];
+      if(lo[i] < ll) ll = lo[i];
+     }
+   double buf = IN_CandleBuffer * oSym.Point();
+   buyLevel  = hh + buf;
+   sellLevel = ll - buf;
+   return true;
+  }
+//+------------------------------------------------------------------+
+//| Pengelolaan versi Candle Breakout (tanpa trailing points)        |
+//+------------------------------------------------------------------+
+void manageCandle()
+  {
+   string pair  = oSym.Name();
+   double point = oSym.Point();
+   double ask   = oSym.Ask();
+   double bid   = oSym.Bid();
+
+   ulong ticketBuy = 0, ticketSell = 0;
+   getTicketBuySell(ticketBuy, ticketSell);
+   ulong tBuyStop = 0, tSellStop = 0;
+   getTicketPO(tBuyStop, tSellStop);
+
+   //--- Reversal: dua posisi terbuka -> tutup posisi pertama
+   if(ticketBuy > 0 && ticketSell > 0)
+     {
+      if(runningTicket > 0)
+        {
+         oTrade.PositionClose(runningTicket);
+         runningTicket = 0;
+        }
+      return;
+     }
+
+   double buyLevel = 0.0, sellLevel = 0.0;
+   if(!getCandleLevels(buyLevel, sellLevel))
+      return; // data candle belum siap
+
+   double sl = 0.0, tp = 0.0;
+   bool inCycle    = (ticketBuy > 0 || ticketSell > 0);
+   bool canOpenNew = marketOK();
+
+   //--- jarak minimal broker untuk stop order
+   double minDist = (double)SymbolInfoInteger(pair, SYMBOL_TRADE_STOPS_LEVEL) * point;
+
+   //--- Sisi BUY STOP (hanya jika belum ada posisi Buy) ---
+   if(ticketBuy == 0 && (inCycle || canOpenNew))
+     {
+      if(buyLevel > ask + minDist) // valid: level di atas harga
+        {
+         calcSLTP(true, buyLevel, point, sl, tp);
+         if(tBuyStop == 0)
+            oTrade.BuyStop(IN_Lot, buyLevel, pair, sl, tp, ORDER_TIME_DAY);
+         else if(MathAbs(buyLevel - OrderGetDoubleByTicket(tBuyStop, ORDER_PRICE_OPEN)) > point)
+            oTrade.OrderModify(tBuyStop, buyLevel, sl, tp, ORDER_TIME_DAY, 0); // re-anchor candle baru
+        }
+     }
+
+   //--- Sisi SELL STOP (hanya jika belum ada posisi Sell) ---
+   if(ticketSell == 0 && (inCycle || canOpenNew))
+     {
+      if(sellLevel < bid - minDist)
+        {
+         calcSLTP(false, sellLevel, point, sl, tp);
+         if(tSellStop == 0)
+            oTrade.SellStop(IN_Lot, sellLevel, pair, sl, tp, ORDER_TIME_DAY);
+         else if(MathAbs(sellLevel - OrderGetDoubleByTicket(tSellStop, ORDER_PRICE_OPEN)) > point)
+            oTrade.OrderModify(tSellStop, sellLevel, sl, tp, ORDER_TIME_DAY, 0);
+        }
+     }
+
+   //--- Catat posisi pertama (yang akan ditutup saat reversal) ---
+   if(ticketBuy == 0 && ticketSell > 0)      runningTicket = ticketSell;
+   else if(ticketBuy > 0 && ticketSell == 0) runningTicket = ticketBuy;
+  }
+//+------------------------------------------------------------------+
+//| Helper: baca ORDER_PRICE_OPEN dari sebuah tiket pending          |
+//+------------------------------------------------------------------+
+double OrderGetDoubleByTicket(ulong ticket, ENUM_ORDER_PROPERTY_DOUBLE prop)
+  {
+   if(OrderSelect(ticket))
+      return OrderGetDouble(prop);
+   return 0.0;
+  }
+//+------------------------------------------------------------------+
 //| Expert tick function                                             |
 //+------------------------------------------------------------------+
 void OnTick()
@@ -178,6 +303,13 @@ void ManagePO()
    string pair = oSym.Name();
    oSym.RefreshRates();
    double point = oSym.Point();
+
+   //--- Mode candle breakout: acuan PO dari high/low candle
+   if(IN_UseCandle)
+     {
+      manageCandle();
+      return;
+     }
 
    ulong ticketBuy = 0, ticketSell = 0;
    getTicketBuySell(ticketBuy, ticketSell);
