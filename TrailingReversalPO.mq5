@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, Trexa"
 #property link      "https://Trexa.id"
-#property version   "1.30"
+#property version   "1.40"
 
 /*
    Versi lengkap & sudah bisa di-compile (MQL5).
@@ -23,11 +23,13 @@
 CTrade      oTrade;
 CSymbolInfo oSym;
 
+// Nilai default di bawah sudah di-tuning untuk XAUUSD broker 3-digit
+// (point = 0.001), hasil backtest terbaik ~3 bulan data M1.
 input    int      IN_MagicNumber   = 123;      //Magic Number
 input    double   IN_Lot           = 0.01;     //Lot Size
-input    int      IN_DistancePO    = 500;      //Jarak PO (points)
-input    int      IN_TrailingStart = 300;      //Trailing Start PO (points)
-input    int      IN_TrailingStep  = 10;       //Trailing Step PO (points)
+input    int      IN_DistancePO    = 6000;     //Jarak PO (points) - XAUUSD 3-digit
+input    int      IN_TrailingStart = 3600;     //Trailing Start PO (points)
+input    int      IN_TrailingStep  = 200;      //Trailing Step PO (points)
 input    int      IN_SL            = 0;        //Stop Loss (points, 0 = nonaktif)
 input    int      IN_TP            = 0;        //Take Profit (points, 0 = nonaktif)
 
