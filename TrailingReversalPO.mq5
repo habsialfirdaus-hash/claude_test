@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, Trexa"
 #property link      "https://Trexa.id"
-#property version   "1.40"
+#property version   "1.50"
 
 /*
    Versi lengkap & sudah bisa di-compile (MQL5).
@@ -23,13 +23,17 @@
 CTrade      oTrade;
 CSymbolInfo oSym;
 
-// Nilai default di bawah sudah di-tuning untuk XAUUSD broker 3-digit
-// (point = 0.001), hasil backtest terbaik ~3 bulan data M1.
+// Nilai default di-tuning dari backtest ~3 bulan data M1 (XAUUSD 3-digit).
+// PENTING: jarak optimal tergantung SPREAD symbol. Dua preset:
+//   * XAUUSD  (spread ~90 pts) : D=6000,  TrailingStart=3600,  Step=200
+//   * XAUUSDc (spread ~260 pts): D=25000, TrailingStart=15000, Step=300  <-- default
+// Default di bawah = preset akun CENT (spread lebar). Ganti ke preset
+// standar bila memakai symbol XAUUSD biasa.
 input    int      IN_MagicNumber   = 123;      //Magic Number
 input    double   IN_Lot           = 0.01;     //Lot Size
-input    int      IN_DistancePO    = 6000;     //Jarak PO (points) - XAUUSD 3-digit
-input    int      IN_TrailingStart = 3600;     //Trailing Start PO (points)
-input    int      IN_TrailingStep  = 200;      //Trailing Step PO (points)
+input    int      IN_DistancePO    = 25000;    //Jarak PO (points) - XAUUSDc (cent)
+input    int      IN_TrailingStart = 15000;    //Trailing Start PO (points)
+input    int      IN_TrailingStep  = 300;      //Trailing Step PO (points)
 input    int      IN_SL            = 0;        //Stop Loss (points, 0 = nonaktif)
 input    int      IN_TP            = 0;        //Take Profit (points, 0 = nonaktif)
 
