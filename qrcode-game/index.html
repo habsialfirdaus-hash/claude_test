@@ -1,0 +1,341 @@
+<title>Kotak Kejutan</title>
+<meta name="theme-color" content="#12d6a1">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&family=Creepster&display=swap');
+
+  :root{
+    --mint:#12d6a1;
+    --mint-deep:#0aa583;
+    --cream:#fef7ef;
+    --cream-2:#fff;
+    --pink:#ff7eb6;
+    --pink-deep:#ff4d97;
+    --grape:#7c5cff;
+    --ink:#1d2b34;
+    --ink-soft:#4a5a63;
+    --shadow:rgba(23,60,52,.18);
+    --blood:#c1121f;
+    --blood-bright:#ff1e2d;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:'Nunito',system-ui,-apple-system,sans-serif;
+    background:
+      radial-gradient(120% 90% at 15% 0%, #d7fff2 0%, transparent 55%),
+      radial-gradient(120% 90% at 90% 10%, #ffe7f3 0%, transparent 50%),
+      var(--cream);
+    color:var(--ink);
+    min-height:100dvh;
+    display:flex;align-items:center;justify-content:center;
+    padding:20px;
+    overflow:hidden;
+    -webkit-tap-highlight-color:transparent;
+    user-select:none;
+  }
+
+  .stage{
+    width:min(430px,100%);
+    background:var(--cream-2);
+    border-radius:28px;
+    box-shadow:0 24px 60px -18px var(--shadow), 0 2px 0 rgba(0,0,0,.03);
+    padding:34px 26px 30px;
+    position:relative;
+    overflow:hidden;
+    min-height:540px;
+    display:flex;flex-direction:column;
+  }
+  .stage::before{
+    content:"";position:absolute;inset:0;border-radius:28px;
+    border:2px solid rgba(18,214,161,.16);pointer-events:none;
+  }
+
+  .brand{display:flex;align-items:center;gap:9px;justify-content:center;margin-bottom:6px}
+  .brand .dot{width:11px;height:11px;border-radius:50%;background:var(--pink);box-shadow:0 0 0 4px rgba(255,126,182,.25)}
+  .brand span{font-family:'Fredoka';font-weight:600;letter-spacing:.18em;text-transform:uppercase;font-size:.72rem;color:var(--ink-soft)}
+
+  .screen{flex:1;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:18px}
+  .screen.active{display:flex;animation:pop .45s cubic-bezier(.2,.9,.3,1.4)}
+  @keyframes pop{from{opacity:0;transform:scale(.92) translateY(10px)}to{opacity:1;transform:none}}
+
+  h1{font-family:'Fredoka';font-weight:700;font-size:2rem;line-height:1.05;text-wrap:balance;letter-spacing:-.01em}
+  .lead{font-size:1.02rem;color:var(--ink-soft);font-weight:700;max-width:30ch;line-height:1.45}
+  .emoji{font-size:3.6rem;filter:drop-shadow(0 8px 14px rgba(0,0,0,.12))}
+  .step-tag{font-family:'Fredoka';font-weight:600;font-size:.74rem;letter-spacing:.16em;text-transform:uppercase;color:var(--mint-deep);background:rgba(18,214,161,.12);padding:6px 14px;border-radius:999px}
+
+  .btn{
+    font-family:'Fredoka';font-weight:600;font-size:1.12rem;
+    color:#063a2e;background:linear-gradient(180deg,#28f0b8,var(--mint));
+    border:none;border-radius:16px;padding:15px 30px;cursor:pointer;
+    box-shadow:0 10px 22px -8px rgba(10,165,131,.7), inset 0 1px 0 rgba(255,255,255,.5);
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .btn:active{transform:translateY(2px) scale(.98);box-shadow:0 5px 12px -6px rgba(10,165,131,.7)}
+  .btn.pink{background:linear-gradient(180deg,#ff9cc8,var(--pink-deep));color:#5a0027;box-shadow:0 10px 22px -8px rgba(255,77,151,.6),inset 0 1px 0 rgba(255,255,255,.4)}
+  .btn:focus-visible{outline:3px solid var(--grape);outline-offset:3px}
+
+  /* box picker */
+  .boxes{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+  .gift{
+    width:92px;height:92px;border-radius:20px;border:none;cursor:pointer;position:relative;
+    background:linear-gradient(160deg,#fff,#ffe9f4);
+    box-shadow:0 12px 22px -12px var(--shadow);font-size:2.6rem;
+    transition:transform .15s ease;
+  }
+  .gift:hover{transform:translateY(-5px) rotate(-2deg)}
+  .gift:active{transform:translateY(0) scale(.95)}
+  .gift.wrong{animation:nope .4s;opacity:.45}
+  @keyframes nope{25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
+
+  /* balloon tapper */
+  .balloon{font-size:5rem;cursor:pointer;line-height:1;transition:transform .1s ease;filter:drop-shadow(0 10px 16px rgba(124,92,255,.25))}
+  .balloon:active{transform:scale(.82)}
+  .meter{width:210px;height:16px;border-radius:999px;background:rgba(124,92,255,.15);overflow:hidden}
+  .meter i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--grape),var(--pink-deep));transition:width .25s cubic-bezier(.2,.9,.3,1.2)}
+  .count{font-family:'Fredoka';font-weight:600;color:var(--grape);font-size:1.1rem}
+
+  /* fake loading */
+  .bar{width:240px;height:14px;border-radius:999px;background:rgba(18,214,161,.14);overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--mint),var(--pink))}
+  .loadtxt{font-family:'Fredoka';font-weight:500;color:var(--ink-soft);font-size:.95rem;min-height:1.2em}
+
+  /* ---------- SCARE ---------- */
+  #scare{
+    position:fixed;inset:0;z-index:99;display:none;
+    background:#000;align-items:center;justify-content:center;
+  }
+  #scare.on{display:flex;animation:flashbg .5s steps(2) 2, shake .5s infinite}
+  @keyframes flashbg{0%,100%{background:#000}50%{background:#390006}}
+  @keyframes shake{
+    0%,100%{transform:translate(0,0) rotate(0)}
+    20%{transform:translate(-9px,6px) rotate(-1.2deg)}
+    40%{transform:translate(8px,-7px) rotate(1deg)}
+    60%{transform:translate(-7px,-5px) rotate(-.6deg)}
+    80%{transform:translate(6px,8px) rotate(1.1deg)}
+  }
+  #scare svg{width:min(94vw,560px);height:auto;filter:drop-shadow(0 0 40px rgba(255,30,45,.55))}
+  .scare-msg{
+    position:fixed;left:0;right:0;bottom:8%;text-align:center;z-index:100;display:none;
+    font-family:'Creepster','Nunito',cursive;color:var(--blood-bright);
+    font-size:clamp(2rem,9vw,3.4rem);letter-spacing:.06em;
+    text-shadow:0 0 18px rgba(255,30,45,.8);
+  }
+  .again{
+    position:fixed;left:50%;bottom:4%;transform:translateX(-50%);z-index:101;display:none;
+    font-family:'Nunito';font-weight:800;font-size:.95rem;color:#ffd9dc;
+    background:rgba(120,10,18,.6);border:1px solid rgba(255,60,70,.5);
+    padding:11px 20px;border-radius:999px;cursor:pointer;backdrop-filter:blur(4px);
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    #scare.on{animation:flashbg .5s steps(2) 1}
+    .screen.active{animation:none}
+  }
+</style>
+
+<main class="stage" id="stage" aria-live="polite">
+  <div class="brand"><span class="dot"></span><span>Kotak&nbsp;Kejutan</span></div>
+
+  <!-- 0: welcome -->
+  <section class="screen active" id="s0">
+    <div class="emoji">🎁</div>
+    <h1>Tebak &amp; Menangkan Hadiah!</h1>
+    <p class="lead">Cuma 3 langkah gampang. Selesaikan semuanya untuk membuka hadiah spesial kamu 🎉</p>
+    <button class="btn" data-go="1">Mulai Main</button>
+  </section>
+
+  <!-- 1: pick a box -->
+  <section class="screen" id="s1">
+    <span class="step-tag">Langkah 1 / 3</span>
+    <h1>Pilih Satu Kotak</h1>
+    <p class="lead">Hadiahmu sembunyi di salah satunya. Ikuti feeling kamu!</p>
+    <div class="boxes" id="boxes">
+      <button class="gift">🎀</button>
+      <button class="gift">🎁</button>
+      <button class="gift">💝</button>
+    </div>
+  </section>
+
+  <!-- 2: tap balloon -->
+  <section class="screen" id="s2">
+    <span class="step-tag">Langkah 2 / 3</span>
+    <h1>Tiup Balonnya!</h1>
+    <p class="lead">Ketuk balon <b>5×</b> supaya makin besar dan hadiahnya keluar.</p>
+    <div class="balloon" id="balloon" role="button" aria-label="ketuk balon">🎈</div>
+    <div class="meter"><i id="meterfill"></i></div>
+    <div class="count"><span id="taps">0</span> / 5</div>
+  </section>
+
+  <!-- 3: fake loading -->
+  <section class="screen" id="s3">
+    <span class="step-tag">Langkah 3 / 3</span>
+    <h1>Menyiapkan Hadiah…</h1>
+    <div class="emoji" id="spin">✨</div>
+    <div class="bar"><i id="barfill"></i></div>
+    <p class="loadtxt" id="loadtxt">Menghubungkan ke server hadiah…</p>
+  </section>
+</main>
+
+<!-- scare overlay -->
+<div id="scare" aria-hidden="true">
+  <svg viewBox="0 0 400 440" role="img" aria-label="wajah menyeramkan">
+    <defs>
+      <radialGradient id="skin" cx="50%" cy="42%" r="65%">
+        <stop offset="0%" stop-color="#e9e4dc"/>
+        <stop offset="62%" stop-color="#a9a294"/>
+        <stop offset="100%" stop-color="#4c463b"/>
+      </radialGradient>
+      <radialGradient id="eye" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#fff3b0"/>
+        <stop offset="35%" stop-color="#ff2a1f"/>
+        <stop offset="100%" stop-color="#5c0000"/>
+      </radialGradient>
+      <radialGradient id="mouth" cx="50%" cy="30%" r="80%">
+        <stop offset="0%" stop-color="#4a0006"/>
+        <stop offset="100%" stop-color="#000"/>
+      </radialGradient>
+    </defs>
+    <!-- head -->
+    <path d="M200 20 C300 20 350 110 348 210 C346 300 300 420 200 430 C100 420 54 300 52 210 C50 110 100 20 200 20 Z" fill="url(#skin)" stroke="#211d16" stroke-width="3"/>
+    <!-- cheek shadows -->
+    <path d="M70 210 q40 70 60 150 q-55 -40 -70 -120 Z" fill="#000" opacity=".22"/>
+    <path d="M330 210 q-40 70 -60 150 q55 -40 70 -120 Z" fill="#000" opacity=".22"/>
+    <!-- brows -->
+    <path d="M96 150 L188 190 L182 208 L100 176 Z" fill="#100c08"/>
+    <path d="M304 150 L212 190 L218 208 L300 176 Z" fill="#100c08"/>
+    <!-- eyes -->
+    <g class="eyes">
+      <ellipse cx="138" cy="210" rx="40" ry="30" fill="#000"/>
+      <ellipse cx="262" cy="210" rx="40" ry="30" fill="#000"/>
+      <circle cx="140" cy="212" r="20" fill="url(#eye)"/>
+      <circle cx="260" cy="212" r="20" fill="url(#eye)"/>
+      <circle cx="140" cy="212" r="7" fill="#1a0000"/>
+      <circle cx="260" cy="212" r="7" fill="#1a0000"/>
+    </g>
+    <!-- nose -->
+    <path d="M200 224 L182 292 L200 300 L218 292 Z" fill="#000" opacity=".5"/>
+    <!-- mouth -->
+    <path d="M120 320 Q200 300 280 320 Q262 404 200 410 Q138 404 120 320 Z" fill="url(#mouth)" stroke="#160000" stroke-width="2"/>
+    <!-- teeth -->
+    <g fill="#efe9dc">
+      <path d="M132 322 l18 30 l14 -34 Z"/>
+      <path d="M170 322 l16 40 l14 -42 Z"/>
+      <path d="M208 320 l14 42 l16 -40 Z"/>
+      <path d="M252 320 l12 36 l16 -34 Z"/>
+      <path d="M150 405 l16 -30 l16 34 Z" opacity=".92"/>
+      <path d="M198 408 l14 -34 l18 32 Z" opacity=".92"/>
+    </g>
+  </svg>
+</div>
+<div class="scare-msg" id="scaremsg">DAPAT KAMU!</div>
+<button class="again" id="again">🔁 Main lagi</button>
+
+<script>
+(function(){
+  "use strict";
+  const reduce = matchMedia('(prefers-reduced-motion:reduce)').matches;
+  const screens = ['s0','s1','s2','s3'].map(id=>document.getElementById(id));
+  function show(n){ screens.forEach((s,i)=>s.classList.toggle('active', i===n)); }
+
+  function buzz(pattern){ try{ navigator.vibrate && navigator.vibrate(pattern); }catch(e){} }
+
+  // ---- go buttons ----
+  document.querySelectorAll('[data-go]').forEach(b=>{
+    b.addEventListener('click',()=>{
+      const n = +b.dataset.go;
+      show(n);
+      if(n===3) runLoader();
+    });
+  });
+
+  // ---- step 1: pick a box ----
+  const gifts = [...document.querySelectorAll('#boxes .gift')];
+  let picks = 0;
+  gifts.forEach(g=>{
+    g.addEventListener('click',()=>{
+      picks++; buzz(20);
+      g.classList.add('wrong'); g.textContent='🕳️'; g.disabled=true;
+      if(picks>=2){                       // let them "fail" then advance
+        setTimeout(()=>show(2), 380);
+      }
+    });
+  });
+
+  // ---- step 2: balloon ----
+  const balloon = document.getElementById('balloon');
+  const tapsEl = document.getElementById('taps');
+  const meter = document.getElementById('meterfill');
+  let taps = 0;
+  function tap(){
+    if(taps>=5) return;
+    taps++; buzz(15);
+    tapsEl.textContent = taps;
+    meter.style.width = (taps/5*100)+'%';
+    balloon.style.fontSize = (5 + taps*0.55) + 'rem';
+    if(taps>=5){ balloon.textContent='🎈'; setTimeout(()=>{ show(3); runLoader(); }, 420); }
+  }
+  balloon.addEventListener('click',tap);
+
+  // ---- step 3: fake loader -> SCARE ----
+  const barfill = document.getElementById('barfill');
+  const loadtxt = document.getElementById('loadtxt');
+  const spin = document.getElementById('spin');
+  const msgs = ['Menghubungkan ke server hadiah…','Memverifikasi keberuntunganmu…','Membungkus hadiah spesial…','Hampir siap… tahan ya!'];
+  let loaderStarted = false;
+  function runLoader(){
+    if(loaderStarted) return; loaderStarted = true;
+    let p = 0, mi = 0;
+    barfill.style.transition = 'width .35s ease';
+    if(!reduce) spin.style.transition='transform .3s';
+    const t = setInterval(()=>{
+      p += 8 + Math.random()*10; if(p>100) p=100;
+      barfill.style.width = p+'%';
+      const want = Math.min(msgs.length-1, Math.floor(p/28));
+      if(want!==mi){ mi=want; loadtxt.textContent = msgs[mi]; }
+      if(!reduce) spin.style.transform = 'rotate('+(p*7)+'deg)';
+      if(p>=100){ clearInterval(t); setTimeout(scare, 520); }
+    }, 260);
+  }
+
+  // ---- the jump scare ----
+  let ac;
+  function scream(){
+    try{
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if(!AC) return;
+      ac = ac || new AC();
+      const now = ac.currentTime;
+      // harsh detuned tones sweeping down
+      [660, 668, 990].forEach((f,i)=>{
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.type = i===2 ? 'square':'sawtooth';
+        o.frequency.setValueAtTime(f, now);
+        o.frequency.exponentialRampToValueAtTime(90, now+1.1);
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(0.32, now+0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, now+1.3);
+        o.connect(g).connect(ac.destination); o.start(now); o.stop(now+1.35);
+      });
+      // noise burst
+      const dur=1.2, buf=ac.createBuffer(1, ac.sampleRate*dur, ac.sampleRate), d=buf.getChannelData(0);
+      for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2);
+      const ns=ac.createBufferSource(), ng=ac.createGain();
+      ns.buffer=buf; ng.gain.setValueAtTime(0.25, now); ng.gain.exponentialRampToValueAtTime(0.0001, now+dur);
+      ns.connect(ng).connect(ac.destination); ns.start(now);
+    }catch(e){}
+  }
+
+  function scare(){
+    document.getElementById('stage').style.display='none';
+    const sc = document.getElementById('scare');
+    sc.classList.add('on'); sc.setAttribute('aria-hidden','false');
+    scream();
+    buzz([0,90,60,90,60,220]);
+    setTimeout(()=>{ document.getElementById('scaremsg').style.display='block'; }, 700);
+    setTimeout(()=>{ document.getElementById('again').style.display='block'; }, 1600);
+  }
+
+  document.getElementById('again').addEventListener('click',()=>location.reload());
+})();
+</script>
