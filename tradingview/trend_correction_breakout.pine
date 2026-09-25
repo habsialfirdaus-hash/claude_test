@@ -17,13 +17,12 @@ showStruct = input.bool(true, "Label HH / HL / LH / LL", group = grpT)
 showBg     = input.bool(true, "Warna background sesuai trend", group = grpT)
 
 grpC = "2. Trend Koreksi"
-minorLeft  = input.int(4, "Pivot koreksi kiri", minval = 1, group = grpC)
-minorRight = input.int(2, "Pivot koreksi kanan (konfirmasi)", minval = 1, group = grpC,
-     tooltip = "Makin kecil, pivot koreksi makin cepat terkonfirmasi sehingga koreksi pendek juga tertangkap.")
-useWick    = input.bool(false, "Validasi garis pakai wick", group = grpC)
+useWick    = input.bool(true, "Garis menyentuh wick (mati = body)", group = grpC)
+touchGap   = input.int(3, "Jarak minimal titik sentuh ke-2 (bar)", minval = 1, group = grpC,
+     tooltip = "Titik sentuh kedua garis minimal sekian bar dari titik awal koreksi, supaya garis tidak terlalu curam/datar karena candle yang menempel di titik awal.")
+minBars    = input.int(5, "Minimal panjang koreksi (bar)", minval = 2, group = grpC)
+maxAge     = input.int(300, "Umur maksimum koreksi (bar)", minval = 20, maxval = 990, group = grpC)
 tolAtr     = input.float(0.05, "Toleransi tembus (x ATR)", minval = 0, step = 0.05, group = grpC)
-minBars    = input.int(5, "Minimal panjang koreksi (bar)", minval = 1, group = grpC)
-maxAge     = input.int(300, "Umur maksimum garis (bar)", minval = 20, maxval = 990, group = grpC)
 keepBroken = input.bool(true, "Simpan garis koreksi yang sudah ditembus", group = grpC)
 showBreak  = input.bool(false, "Tandai titik tembus garis koreksi", group = grpC)
 corrCol    = input.color(color.new(color.orange, 0), "Warna garis koreksi", group = grpC)
@@ -61,118 +60,59 @@ int emaTr = close > ema ? 1 : close < ema ? -1 : 0
 int trend = trendMode == "Struktur" ? structTr : trendMode == "EMA" ? emaTr : structTr == emaTr ? structTr : 0
 
 // ───────── Trend koreksi ─────────
-pph = ta.pivothigh(high, minorLeft, minorRight)
-ppl = ta.pivotlow(low, minorLeft, minorRight)
-
-var int   aX      = na
-var float aY      = na
-var int   pX      = na
-var float pY      = na
-var line  cLine   = na
-var int   lX      = na
-var float lY      = na
-var float cSlope  = na
-var bool  cActive = false
-
-// garis valid jika tidak ada bar di antara kedua titik (x1..x2) yang menembusnya
-validLine(int x1, float y1, float slope, int d, int x2) =>
-    bool ok = true
-    for i = bar_index - x2 to bar_index - x1
-        float lp  = y1 + slope * (bar_index - i - x1)
-        float src = useWick ? (d == 1 ? high[i] : low[i]) : close[i]
-        if d * (src - lp) > tol
-            ok := false
-            break
-    ok
-
-// offset bar pertama setelah x2 yang CLOSE-nya menembus garis, -1 jika belum ada
-firstBreak(int x1, float y1, float slope, int d, int x2) =>
-    int res = -1
-    for i = bar_index - x2 - 1 to 0
-        float lp = y1 + slope * (bar_index - i - x1)
-        if d * (close[i] - lp) > tol
-            res := i
-            break
-    res
+// Titik awal koreksi = harga ekstrem terakhir searah trend (low terendah saat turun, high tertinggi saat naik).
+// Garis ditarik dari titik awal dengan sudut paling landai yang tetap menyentuh candle koreksi
+// tanpa ada yang menembus (seperti menarik trendline manual), lalu dicek apakah candle sekarang close menembusnya.
+var int   aX    = na
+var float aY    = na
+var line  cLine = na
+var bool  drawn = false
 
 if trend != nz(trend[1])
-    if cActive
+    if drawn
         line.delete(cLine)
-    cActive := false
+    drawn := false
     aX := na
     aY := na
-    pX := na
-    pY := na
 
 int d = trend
 bool corrBreakUp = false
 bool corrBreakDn = false
 
-if cActive and d != 0
-    float y = lY + cSlope * (bar_index - lX)
-    line.set_xy2(cLine, bar_index, y)
-    if d * (close - y) > tol
-        bool longEnough = bar_index - aX >= minBars
-        if longEnough
-            corrBreakUp := d == 1
-            corrBreakDn := d == -1
-            if showBreak
-                label.new(bar_index, d == 1 ? low : high, "x", style = d == 1 ? label.style_label_up : label.style_label_down, color = color.new(corrCol, 20), textcolor = color.white, size = size.tiny, yloc = d == 1 ? yloc.belowbar : yloc.abovebar)
-        if not longEnough or not keepBroken
+if d != 0
+    float ext = d == 1 ? high : low
+    int age = na(aX) ? 0 : bar_index - aX
+    if na(aY) or d * (ext - aY) >= 0 or age > maxAge
+        if drawn
             line.delete(cLine)
-        cActive := false
-        aX := na
-        aY := na
-    else if bar_index - lX > maxAge
-        line.delete(cLine)
-        cActive := false
-
-float piv = d == 1 ? pph : d == -1 ? ppl : na
-if not na(piv)
-    int   x2 = bar_index - minorRight
-    float y2 = piv
-    if not na(aX) and bar_index - aX > maxAge
-        aY := na
-    if na(aY) or d * (y2 - aY) >= 0
-        if cActive
-            line.delete(cLine)
-            cActive := false
-        aX := x2
-        aY := y2
-    else
-        int   ax = na
-        float ay = na
-        float sl = na
-        float s1 = (y2 - aY) / (x2 - aX)
-        if validLine(aX, aY, s1, d, x2)
-            ax := aX
-            ay := aY
-            sl := s1
-        else if not na(pY) and pX > aX and d * (pY - y2) > 0
-            float s2 = (y2 - pY) / (x2 - pX)
-            if validLine(pX, pY, s2, d, x2)
-                ax := pX
-                ay := pY
-                sl := s2
-        if not na(sl)
-            if cActive
-                line.delete(cLine)
-            int brk = firstBreak(ax, ay, sl, d, x2)
-            if brk < 0
-                cLine   := line.new(ax, ay, bar_index, ay + sl * (bar_index - ax), color = corrCol, width = lineW)
-                lX      := ax
-                lY      := ay
-                cSlope  := sl
-                cActive := true
+        drawn := false
+        aX := bar_index
+        aY := ext
+    else if age >= minBars
+        float s = na
+        int far = age - touchGap
+        if far >= 1
+            for i = 1 to far
+                float v  = useWick ? (d == 1 ? high[i] : low[i]) : (d == 1 ? math.max(open[i], close[i]) : math.min(open[i], close[i]))
+                float si = (v - aY) / (age - i)
+                s := na(s) ? si : d == 1 ? math.max(s, si) : math.min(s, si)
+        if not na(s) and d * s < 0
+            float y = aY + s * age
+            if drawn
+                line.set_xy2(cLine, bar_index, y)
             else
-                cActive := false
-                int bx = bar_index - brk
-                if keepBroken and bx - aX >= minBars
-                    line.new(ax, ay, bx, ay + sl * (bx - ax), color = corrCol, width = lineW)
+                cLine := line.new(aX, aY, bar_index, y, color = corrCol, width = lineW)
+                drawn := true
+            if d * (close - y) > tol
+                corrBreakUp := d == 1
+                corrBreakDn := d == -1
+                if showBreak
+                    label.new(bar_index, d == 1 ? low : high, "x", style = d == 1 ? label.style_label_up : label.style_label_down, color = color.new(corrCol, 20), textcolor = color.white, size = size.tiny, yloc = d == 1 ? yloc.belowbar : yloc.abovebar)
+                if not keepBroken
+                    line.delete(cLine)
+                drawn := false
                 aX := na
                 aY := na
-    pX := x2
-    pY := y2
 
 plot(showEma ? ema : na, "EMA", color = color.new(color.purple, 0))
 bgcolor(showBg ? (trend == 1 ? color.new(color.teal, 92) : trend == -1 ? color.new(color.red, 92) : na) : na)
@@ -183,7 +123,7 @@ if barstate.islast
     table.cell(tb, 0, 0, "Trend utama", text_color = color.white, text_size = size.small)
     table.cell(tb, 1, 0, trend == 1 ? "NAIK" : trend == -1 ? "TURUN" : "NETRAL", text_color = trend == 1 ? color.lime : trend == -1 ? color.red : color.gray, text_size = size.small)
     table.cell(tb, 0, 1, "Koreksi", text_color = color.white, text_size = size.small)
-    table.cell(tb, 1, 1, cActive ? (trend == 1 ? "Koreksi turun - garis aktif" : "Koreksi naik - garis aktif") : na(aY) ? "Menunggu swing" : "Menunggu pivot koreksi", text_color = color.orange, text_size = size.small)
+    table.cell(tb, 1, 1, drawn ? (trend == 1 ? "Koreksi turun - garis aktif" : "Koreksi naik - garis aktif") : "Menunggu koreksi", text_color = color.orange, text_size = size.small)
 
 alertcondition(corrBreakUp, "Garis koreksi ditembus (trend naik)", "Trend naik: garis koreksi turun ditembus ke atas")
 alertcondition(corrBreakDn, "Garis koreksi ditembus (trend turun)", "Trend turun: garis koreksi naik ditembus ke bawah")
