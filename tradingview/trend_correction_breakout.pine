@@ -1,35 +1,49 @@
 //@version=5
-// Trend + Correction Breakout
-// 1) Tentukan TREND UTAMA  : struktur pivot besar (break of structure) dan/atau EMA.
-// 2) Deteksi TREND KOREKSI : garis trend berlawanan arah trend utama, dari pivot kecil.
-//      - Trend utama naik  -> koreksi turun  -> garis resistance (dari swing high ke lower high).
-//      - Trend utama turun -> koreksi naik   -> garis support    (dari swing low ke higher low).
-// 3) ENTRY saat candle CLOSE menembus garis koreksi searah trend utama.
-//      SL = ujung koreksi (low/high terendah/tertinggi selama koreksi) ± buffer ATR, TP = RR x risk.
-indicator("Trend + Correction Breakout", "TCB", overlay = true, max_lines_count = 500, max_labels_count = 500, max_bars_back = 1000)
+// Trend + Correction Breakout v2
+// 1) TREND UTAMA  : struktur pivot besar (BOS) dan/atau EMA, plus filter trend timeframe besar (HTF).
+// 2) TREND KOREKSI: garis berlawanan arah trend utama dari pivot kecil.
+// 3) ENTRY        : close menembus garis koreksi searah trend utama, lolos semua filter:
+//                   kedalaman koreksi (Fibonacci), candle konfirmasi, sesi, ADX, satu posisi.
+// 4) STATISTIK    : setiap sinyal dilacak sampai kena TP atau SL -> winrate & net R di panel.
+indicator("Trend + Correction Breakout", "TCB", overlay = true, max_lines_count = 500, max_labels_count = 500, max_bars_back = 2000)
 
 // ───────── Input ─────────
 grpT = "1. Trend Utama"
-trendMode  = input.string("Struktur + EMA", "Penentu trend utama", options = ["Struktur", "EMA", "Struktur + EMA"], group = grpT,
-     tooltip = "Struktur: trend berubah saat close menembus pivot besar terakhir (BOS/CHoCH). EMA: close di atas/bawah EMA. Struktur + EMA: keduanya harus searah, selain itu netral (tidak ada sinyal).")
+trendMode  = input.string("Struktur + EMA", "Penentu trend utama", options = ["Struktur", "EMA", "Struktur + EMA"], group = grpT)
 majorLen   = input.int(20, "Pivot trend utama (kiri/kanan)", minval = 5, group = grpT)
 emaLen     = input.int(200, "Panjang EMA", minval = 1, group = grpT)
+useHtf     = input.bool(true, "Filter trend timeframe besar (HTF)", group = grpT)
+htfTf      = input.timeframe("15", "Timeframe HTF", group = grpT)
+htfEmaLen  = input.int(50, "EMA HTF", minval = 1, group = grpT)
+useAdx     = input.bool(false, "Filter kekuatan trend (ADX)", group = grpT)
+adxMin     = input.float(20, "ADX minimum", minval = 0, group = grpT)
 showEma    = input.bool(true, "Tampilkan EMA", group = grpT)
 showStruct = input.bool(true, "Label HH / HL / LH / LL", group = grpT)
 showBg     = input.bool(true, "Warna background sesuai trend", group = grpT)
 
 grpC = "2. Trend Koreksi"
 minorLen   = input.int(4, "Pivot koreksi (kiri/kanan)", minval = 2, group = grpC)
-useWick    = input.bool(false, "Validasi garis pakai wick", group = grpC,
-     tooltip = "Mati: garis valid selama tidak ada CLOSE yang menembus. Hidup: HIGH/LOW juga tidak boleh menembus (lebih ketat).")
+useWick    = input.bool(false, "Validasi garis pakai wick", group = grpC)
 tolAtr     = input.float(0.05, "Toleransi tembus (x ATR)", minval = 0, step = 0.05, group = grpC)
-minBars    = input.int(5, "Minimal panjang koreksi (bar)", minval = 1, group = grpC)
-maxAge     = input.int(300, "Umur maksimum garis (bar)", minval = 20, maxval = 990, group = grpC)
+minBars    = input.int(8, "Minimal panjang koreksi (bar)", minval = 1, group = grpC)
+maxAge     = input.int(300, "Umur maksimum garis (bar)", minval = 20, maxval = 900, group = grpC)
+useRet     = input.bool(true, "Filter kedalaman koreksi (Fibonacci)", group = grpC,
+     tooltip = "Koreksi diukur terhadap impuls sebelumnya. Koreksi terlalu dangkal = belum ada diskon, terlalu dalam = trend kemungkinan patah.")
+minRet     = input.float(0.382, "Retracement minimum", minval = 0, maxval = 1, step = 0.01, group = grpC)
+maxRet     = input.float(0.786, "Retracement maksimum", minval = 0, maxval = 1.5, step = 0.01, group = grpC)
+impLook    = input.int(60, "Lookback awal impuls (bar)", minval = 5, maxval = 900, group = grpC)
 corrCol    = input.color(color.new(color.orange, 0), "Warna garis koreksi", group = grpC)
 lineW      = input.int(2, "Tebal garis", minval = 1, maxval = 5, group = grpC)
 
 grpE = "3. Entry"
-rr         = input.float(2.0, "Risk : Reward (TP)", minval = 0.1, step = 0.1, group = grpE)
+useBody    = input.bool(true, "Candle breakout harus kuat", group = grpE,
+     tooltip = "Candle searah sinyal dan body minimal sekian persen dari range candle.")
+bodyMin    = input.float(0.5, "Body minimum (x range)", minval = 0, maxval = 1, step = 0.05, group = grpE)
+useSess    = input.bool(true, "Filter sesi trading", group = grpE)
+sessStr    = input.session("1400-2359", "Sesi (London + New York)", group = grpE)
+sessTz     = input.string("Asia/Jakarta", "Zona waktu sesi", group = grpE)
+onePos     = input.bool(true, "Hanya satu posisi sekaligus", group = grpE)
+rr         = input.float(1.5, "Risk : Reward (TP)", minval = 0.1, step = 0.1, group = grpE)
 slBufAtr   = input.float(0.2, "Buffer SL (x ATR)", minval = 0, step = 0.05, group = grpE)
 showTrade  = input.bool(true, "Gambar garis Entry / SL / TP", group = grpE)
 tradeBars  = input.int(30, "Panjang garis Entry / SL / TP (bar)", minval = 5, group = grpE)
@@ -38,6 +52,9 @@ tradeBars  = input.int(30, "Panjang garis Entry / SL / TP (bar)", minval = 5, gr
 atr = ta.atr(14)
 tol = nz(atr) * tolAtr
 ema = ta.ema(close, emaLen)
+[diPlus, diMinus, adxV] = ta.dmi(14, 14)
+int htfTr = request.security(syminfo.tickerid, htfTf, close[1] > ta.ema(close, htfEmaLen)[1] ? 1 : -1, lookahead = barmerge.lookahead_on)
+bool inSess = not na(time(timeframe.period, sessStr, sessTz))
 
 mph = ta.pivothigh(high, majorLen, majorLen)
 mpl = ta.pivotlow(low, majorLen, majorLen)
@@ -57,7 +74,6 @@ if not na(mpl)
         label.new(bar_index - majorLen, mpl, txt, style = label.style_label_up, color = color.new(color.gray, 100), textcolor = color.gray, size = size.small)
     majL := mpl
 
-// Break of structure: close menembus pivot besar terakhir
 if not na(majH) and close > majH and structTr != 1
     structTr := 1
 if not na(majL) and close < majL and structTr != -1
@@ -66,21 +82,39 @@ if not na(majL) and close < majL and structTr != -1
 int emaTr = close > ema ? 1 : close < ema ? -1 : 0
 int trend = trendMode == "Struktur" ? structTr : trendMode == "EMA" ? emaTr : structTr == emaTr ? structTr : 0
 
+// ───────── Statistik trade (SL dicek duluan = perhitungan konservatif) ─────────
+var int   tDir   = 0
+var float tSL    = na
+var float tTP    = na
+var int   wins   = 0
+var int   losses = 0
+
+if tDir != 0
+    bool slHit = tDir == 1 ? low <= tSL : high >= tSL
+    bool tpHit = tDir == 1 ? high >= tTP : low <= tTP
+    if slHit
+        losses += 1
+        label.new(bar_index, tSL, "SL", style = label.style_label_center, color = color.new(color.red, 30), textcolor = color.white, size = size.tiny)
+        tDir := 0
+    else if tpHit
+        wins += 1
+        label.new(bar_index, tTP, "TP", style = label.style_label_center, color = color.new(color.green, 30), textcolor = color.white, size = size.tiny)
+        tDir := 0
+
 // ───────── Trend koreksi ─────────
 pph = ta.pivothigh(high, minorLen, minorLen)
 ppl = ta.pivotlow(low, minorLen, minorLen)
 
-var int   aX      = na      // awal koreksi (swing high saat uptrend / swing low saat downtrend)
+var int   aX      = na
 var float aY      = na
-var int   pX      = na      // pivot kecil sebelumnya (cadangan anchor garis)
+var int   pX      = na
 var float pY      = na
-var line  cLine   = na      // garis koreksi aktif
+var line  cLine   = na
 var int   lX      = na
 var float lY      = na
 var float cSlope  = na
 var bool  cActive = false
 
-// true jika tidak ada bar dari x1 s/d bar sekarang yang menembus garis (ke arah d)
 validLine(int x1, float y1, float slope, int d) =>
     bool ok = true
     for i = 0 to bar_index - x1
@@ -91,7 +125,6 @@ validLine(int x1, float y1, float slope, int d) =>
             break
     ok
 
-// Trend utama berubah -> buang koreksi yang sedang dilacak
 if trend != nz(trend[1])
     if cActive
         line.delete(cLine)
@@ -107,23 +140,37 @@ bool sellSig = false
 float sigEntry = na
 float sigSL    = na
 float sigTP    = na
+float sigRet   = na
 
-// Perpanjang garis aktif & cek breakout
 if cActive and d != 0
     float y = lY + cSlope * (bar_index - lX)
     line.set_xy2(cLine, bar_index, y)
     if d * (close - y) > tol
-        if bar_index - aX >= minBars  // ujung koreksi untuk SL
-            float ext = d == 1 ? low : high
-            for i = 0 to math.min(bar_index - aX, 990)
-                ext := d == 1 ? math.min(ext, low[i]) : math.max(ext, high[i])
+        int back = math.min(bar_index - aX, 900)
+        float ext = d == 1 ? low : high
+        for i = 0 to back
+            ext := d == 1 ? math.min(ext, low[i]) : math.max(ext, high[i])
+        float imp = ext
+        for k = back to math.min(back + impLook, 1900)
+            imp := d == 1 ? math.min(imp, low[k]) : math.max(imp, high[k])
+        float impSize = math.abs(aY - imp)
+        sigRet := impSize > 0 ? math.abs(aY - ext) / impSize : 1.0
+        bool okRet  = not useRet or (sigRet >= minRet and sigRet <= maxRet)
+        bool okLen  = bar_index - aX >= minBars
+        bool okBody = not useBody or (d * (close - open) > 0 and math.abs(close - open) >= bodyMin * (high - low))
+        bool okHtf  = not useHtf or htfTr == d
+        bool okAdx  = not useAdx or adxV >= adxMin
+        bool okSess = not useSess or inSess
+        bool okFree = not onePos or tDir == 0
+        if okRet and okLen and okBody and okHtf and okAdx and okSess and okFree
             sigEntry := close
             sigSL    := ext - d * nz(atr) * slBufAtr
             sigTP    := sigEntry + d * rr * math.abs(sigEntry - sigSL)
             buySig   := d == 1
             sellSig  := d == -1
         else
-            line.delete(cLine)   // koreksi terlalu pendek, abaikan
+            line.set_style(cLine, line.style_dotted)
+            line.set_color(cLine, color.new(color.gray, 40))
         cActive := false
         aX := na
         aY := na
@@ -131,20 +178,19 @@ if cActive and d != 0
         line.delete(cLine)
         cActive := false
 
-// Pivot kecil baru di sisi koreksi (high saat uptrend, low saat downtrend)
 float piv = d == 1 ? pph : d == -1 ? ppl : na
 if not na(piv)
     int   x2 = bar_index - minorLen
     float y2 = piv
     if not na(aX) and bar_index - aX > maxAge
-        aY := na   // awal koreksi terlalu tua
-    if na(aY) or d * (y2 - aY) >= 0  // swing baru searah trend utama -> awal koreksi baru
+        aY := na
+    if na(aY) or d * (y2 - aY) >= 0
         if cActive
             line.delete(cLine)
             cActive := false
         aX := x2
         aY := y2
-    else  // lower high (uptrend) / higher low (downtrend) -> tarik garis koreksi
+    else
         int   ax = na
         float ay = na
         float sl = na
@@ -170,10 +216,13 @@ if not na(piv)
     pX := x2
     pY := y2
 
-// ───────── Gambar sinyal ─────────
+// ───────── Sinyal ─────────
 if buySig or sellSig
+    tDir := d
+    tSL  := sigSL
+    tTP  := sigTP
     color c = buySig ? color.teal : color.red
-    string txt = (buySig ? "BUY" : "SELL") + "\nE " + str.tostring(sigEntry, format.mintick) + "\nSL " + str.tostring(sigSL, format.mintick) + "\nTP " + str.tostring(sigTP, format.mintick)
+    string txt = (buySig ? "BUY" : "SELL") + "\nE " + str.tostring(sigEntry, format.mintick) + "\nSL " + str.tostring(sigSL, format.mintick) + "\nTP " + str.tostring(sigTP, format.mintick) + "\nFib " + str.tostring(sigRet, "#.###")
     label.new(bar_index, buySig ? low : high, txt, style = buySig ? label.style_label_up : label.style_label_down, color = c, textcolor = color.white, size = size.small, yloc = buySig ? yloc.belowbar : yloc.abovebar)
     if showTrade
         line.new(bar_index, sigEntry, bar_index + tradeBars, sigEntry, color = color.blue, width = 1)
@@ -185,13 +234,23 @@ plot(showEma ? ema : na, "EMA", color = color.new(color.purple, 0))
 bgcolor(showBg ? (trend == 1 ? color.new(color.teal, 92) : trend == -1 ? color.new(color.red, 92) : na) : na)
 
 // ───────── Panel info ─────────
-var table tb = table.new(position.top_right, 2, 2, bgcolor = color.new(color.black, 20), border_width = 1)
+var table tb = table.new(position.top_right, 2, 6, bgcolor = color.new(color.black, 20), border_width = 1)
 if barstate.islast
+    int total = wins + losses
+    float wr  = total > 0 ? 100.0 * wins / total : na
+    float netR = wins * rr - losses
     table.cell(tb, 0, 0, "Trend utama", text_color = color.white, text_size = size.small)
     table.cell(tb, 1, 0, trend == 1 ? "NAIK" : trend == -1 ? "TURUN" : "NETRAL", text_color = trend == 1 ? color.lime : trend == -1 ? color.red : color.gray, text_size = size.small)
-    table.cell(tb, 0, 1, "Koreksi", text_color = color.white, text_size = size.small)
-    table.cell(tb, 1, 1, cActive ? "Garis aktif - tunggu break" : na(aY) ? "Menunggu swing" : "Menunggu pivot koreksi", text_color = color.orange, text_size = size.small)
+    table.cell(tb, 0, 1, "Trend HTF " + htfTf, text_color = color.white, text_size = size.small)
+    table.cell(tb, 1, 1, htfTr == 1 ? "NAIK" : "TURUN", text_color = htfTr == 1 ? color.lime : color.red, text_size = size.small)
+    table.cell(tb, 0, 2, "Koreksi", text_color = color.white, text_size = size.small)
+    table.cell(tb, 1, 2, cActive ? "Garis aktif - tunggu break" : na(aY) ? "Menunggu swing" : "Menunggu pivot koreksi", text_color = color.orange, text_size = size.small)
+    table.cell(tb, 0, 3, "Trade (W / L)", text_color = color.white, text_size = size.small)
+    table.cell(tb, 1, 3, str.tostring(total) + " (" + str.tostring(wins) + " / " + str.tostring(losses) + ")", text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 4, "Winrate", text_color = color.white, text_size = size.small)
+    table.cell(tb, 1, 4, na(wr) ? "-" : str.tostring(wr, "#.#") + " %", text_color = color.yellow, text_size = size.small)
+    table.cell(tb, 0, 5, "Net (R)", text_color = color.white, text_size = size.small)
+    table.cell(tb, 1, 5, str.tostring(netR, "#.#") + " R", text_color = netR >= 0 ? color.lime : color.red, text_size = size.small)
 
-// ───────── Alert ─────────
 alertcondition(buySig, "BUY - koreksi uptrend ditembus", "Trend naik: garis koreksi ditembus ke atas")
 alertcondition(sellSig, "SELL - koreksi downtrend ditembus", "Trend turun: garis koreksi ditembus ke bawah")
