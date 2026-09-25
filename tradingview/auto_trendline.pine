@@ -113,29 +113,26 @@ if upActive
     else if bar_index - upX1 > maxAge
         upActive := false
 
-// ───────── Pivot high baru → garis resistance ─────────
+// ───────── Pivot high baru -> garis resistance ─────────
 if not na(ph) and showDn
     int   x2 = bar_index - pivLen
     float y2 = ph
     int   ax = na
     float ay = na
-    float sl = na
-    // 1) coba dari titik awal garis aktif (swing utama)
+    float sl = na  // 1) coba dari titik awal garis aktif (swing utama)
     if keepAnchor and dnActive and y2 < dnY1 and x2 > dnX1
         float s = (y2 - dnY1) / (x2 - dnX1)
         if validResistance(dnX1, dnY1, s)
             ax := dnX1
             ay := dnY1
-            sl := s
-    // 2) fallback: pivot high sebelumnya (lower high)
+            sl := s  // 2) fallback: pivot high sebelumnya (lower high)
     if na(sl) and not na(lastPH) and y2 < lastPH and bar_index - lastPHi <= maxAge
         float s = (y2 - lastPH) / (x2 - lastPHi)
         if validResistance(lastPHi, lastPH, s)
             ax := lastPHi
             ay := lastPH
             sl := s
-    if not na(sl)
-        // garis lama dengan anchor yang sama diganti; lainnya dibekukan
+    if not na(sl)  // garis lama dengan anchor yang sama diganti; lainnya dibekukan
         if dnActive and dnX1 == ax
             line.delete(dnLine)
             array.pop(dnLines)
@@ -148,7 +145,7 @@ if not na(ph) and showDn
     lastPH  := y2
     lastPHi := x2
 
-// ───────── Pivot low baru → garis support ─────────
+// ───────── Pivot low baru -> garis support ─────────
 if not na(pl) and showUp
     int   x2 = bar_index - pivLen
     float y2 = pl
