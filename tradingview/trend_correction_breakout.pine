@@ -1,9 +1,9 @@
 //@version=5
 // Trend + Correction Detector
 // 1) TREND UTAMA  : struktur pivot besar (BOS) dan/atau EMA.
-// 2) TREND KOREKSI: garis berlawanan arah trend utama dari pivot kecil.
-//      Trend naik  -> koreksi turun -> garis dari swing high ke lower high.
-//      Trend turun -> koreksi naik  -> garis dari swing low ke higher low.
+// 2) TREND KOREKSI: garis berlawanan arah trend utama, ditarik dari titik ekstrem terakhir.
+//      Trend naik  -> koreksi turun -> garis resistance dari high tertinggi.
+//      Trend turun -> koreksi naik  -> garis support dari low terendah.
 // Tidak ada sinyal entry: keputusan buy/sell ditentukan sendiri oleh trader.
 indicator("Trend + Correction Detector", "TCD", overlay = true, max_lines_count = 500, max_labels_count = 500, max_bars_back = 1000)
 
