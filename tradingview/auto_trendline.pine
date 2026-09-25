@@ -1,0 +1,185 @@
+//@version=5
+// Auto Trendline Detector
+// Mendeteksi garis trend otomatis dari pivot high / pivot low:
+//  - Garis resistance (downtrend): menghubungkan swing high ke lower high berikutnya.
+//  - Garis support (uptrend): menghubungkan swing low ke higher low berikutnya.
+// Garis hanya digambar jika tidak ada candle yang menembusnya di antara kedua titik,
+// lalu diperpanjang ke kanan sampai harga menembus (breakout) atau terlalu tua.
+indicator("Auto Trendline Detector", overlay = true, max_lines_count = 500, max_labels_count = 500, max_bars_back = 1000)
+
+// ───────── Input ─────────
+pivLen      = input.int(10, "Panjang Pivot (kiri/kanan)", minval = 2, group = "Deteksi")
+maxAge      = input.int(400, "Umur maksimum garis (bar)", minval = 20, maxval = 990, group = "Deteksi")
+useWick     = input.bool(false, "Validasi pakai wick (bukan close)", group = "Deteksi",
+     tooltip = "Mati: garis dianggap valid selama tidak ada CLOSE yang menembus. Hidup: HIGH/LOW juga tidak boleh menembus (lebih ketat).")
+tolAtr      = input.float(0.1, "Toleransi tembus (x ATR)", minval = 0, step = 0.05, group = "Deteksi")
+keepAnchor  = input.bool(true, "Pertahankan titik awal swing utama", group = "Deteksi",
+     tooltip = "Jika hidup, garis baru dicoba ditarik dari titik awal garis aktif (swing utama) seperti trendline manual.")
+
+showDn      = input.bool(true, "Tampilkan garis downtrend (resistance)", group = "Tampilan")
+showUp      = input.bool(true, "Tampilkan garis uptrend (support)", group = "Tampilan")
+showBroken  = input.bool(true, "Simpan garis yang sudah ditembus", group = "Tampilan")
+maxLines    = input.int(8, "Maks. garis tersimpan per sisi", minval = 1, maxval = 200, group = "Tampilan")
+showBreak   = input.bool(true, "Label breakout", group = "Tampilan")
+dnCol       = input.color(color.new(color.black, 0), "Warna downtrend", group = "Tampilan")
+upCol       = input.color(color.new(color.black, 0), "Warna uptrend", group = "Tampilan")
+lineW       = input.int(1, "Tebal garis", minval = 1, maxval = 5, group = "Tampilan")
+
+// ───────── Data ─────────
+atr = ta.atr(14)
+tol = nz(atr) * tolAtr
+ph  = ta.pivothigh(high, pivLen, pivLen)
+pl  = ta.pivotlow(low, pivLen, pivLen)
+
+// Pivot sebelumnya
+var float lastPH  = na
+var int   lastPHi = na
+var float lastPL  = na
+var int   lastPLi = na
+
+// Garis aktif downtrend
+var line  dnLine   = na
+var int   dnX1     = na
+var float dnY1     = na
+var float dnSlope  = na
+var bool  dnActive = false
+var dnLines = array.new<line>()
+
+// Garis aktif uptrend
+var line  upLine   = na
+var int   upX1     = na
+var float upY1     = na
+var float upSlope  = na
+var bool  upActive = false
+var upLines = array.new<line>()
+
+// ───────── Fungsi ─────────
+// true jika tidak ada bar dari x1 s/d bar sekarang yang menembus ke ATAS garis
+validResistance(int x1, float y1, float slope) =>
+    bool ok = true
+    int span = bar_index - x1
+    for i = 0 to span
+        float lp  = y1 + slope * (bar_index - i - x1)
+        float src = useWick ? high[i] : close[i]
+        if src > lp + tol
+            ok := false
+            break
+    ok
+
+// true jika tidak ada bar dari x1 s/d bar sekarang yang menembus ke BAWAH garis
+validSupport(int x1, float y1, float slope) =>
+    bool ok = true
+    int span = bar_index - x1
+    for i = 0 to span
+        float lp  = y1 + slope * (bar_index - i - x1)
+        float src = useWick ? low[i] : close[i]
+        if src < lp - tol
+            ok := false
+            break
+    ok
+
+storeLine(array<line> arr, line ln) =>
+    array.push(arr, ln)
+    if array.size(arr) > maxLines
+        line.delete(array.shift(arr))
+
+// ───────── Update garis aktif & cek breakout ─────────
+bool breakUp = false   // harga menembus garis downtrend ke atas (bullish)
+bool breakDn = false   // harga menembus garis uptrend ke bawah (bearish)
+
+if dnActive
+    float y = dnY1 + dnSlope * (bar_index - dnX1)
+    line.set_xy2(dnLine, bar_index, y)
+    if close > y + tol
+        breakUp  := true
+        dnActive := false
+        if showBreak
+            label.new(bar_index, low, "▲ BO", style = label.style_label_up, color = color.new(color.teal, 0), textcolor = color.white, size = size.tiny)
+        if not showBroken
+            line.delete(dnLine)
+    else if bar_index - dnX1 > maxAge
+        dnActive := false
+
+if upActive
+    float y = upY1 + upSlope * (bar_index - upX1)
+    line.set_xy2(upLine, bar_index, y)
+    if close < y - tol
+        breakDn  := true
+        upActive := false
+        if showBreak
+            label.new(bar_index, high, "▼ BD", style = label.style_label_down, color = color.new(color.red, 0), textcolor = color.white, size = size.tiny)
+        if not showBroken
+            line.delete(upLine)
+    else if bar_index - upX1 > maxAge
+        upActive := false
+
+// ───────── Pivot high baru → garis resistance ─────────
+if not na(ph) and showDn
+    int   x2 = bar_index - pivLen
+    float y2 = ph
+    int   ax = na
+    float ay = na
+    float sl = na
+    // 1) coba dari titik awal garis aktif (swing utama)
+    if keepAnchor and dnActive and y2 < dnY1 and x2 > dnX1
+        float s = (y2 - dnY1) / (x2 - dnX1)
+        if validResistance(dnX1, dnY1, s)
+            ax := dnX1
+            ay := dnY1
+            sl := s
+    // 2) fallback: pivot high sebelumnya (lower high)
+    if na(sl) and not na(lastPH) and y2 < lastPH and bar_index - lastPHi <= maxAge
+        float s = (y2 - lastPH) / (x2 - lastPHi)
+        if validResistance(lastPHi, lastPH, s)
+            ax := lastPHi
+            ay := lastPH
+            sl := s
+    if not na(sl)
+        // garis lama dengan anchor yang sama diganti; lainnya dibekukan
+        if dnActive and dnX1 == ax
+            line.delete(dnLine)
+            array.pop(dnLines)
+        dnLine   := line.new(ax, ay, bar_index, ay + sl * (bar_index - ax), color = dnCol, width = lineW)
+        dnX1     := ax
+        dnY1     := ay
+        dnSlope  := sl
+        dnActive := true
+        storeLine(dnLines, dnLine)
+    lastPH  := y2
+    lastPHi := x2
+
+// ───────── Pivot low baru → garis support ─────────
+if not na(pl) and showUp
+    int   x2 = bar_index - pivLen
+    float y2 = pl
+    int   ax = na
+    float ay = na
+    float sl = na
+    if keepAnchor and upActive and y2 > upY1 and x2 > upX1
+        float s = (y2 - upY1) / (x2 - upX1)
+        if validSupport(upX1, upY1, s)
+            ax := upX1
+            ay := upY1
+            sl := s
+    if na(sl) and not na(lastPL) and y2 > lastPL and bar_index - lastPLi <= maxAge
+        float s = (y2 - lastPL) / (x2 - lastPLi)
+        if validSupport(lastPLi, lastPL, s)
+            ax := lastPLi
+            ay := lastPL
+            sl := s
+    if not na(sl)
+        if upActive and upX1 == ax
+            line.delete(upLine)
+            array.pop(upLines)
+        upLine   := line.new(ax, ay, bar_index, ay + sl * (bar_index - ax), color = upCol, width = lineW)
+        upX1     := ax
+        upY1     := ay
+        upSlope  := sl
+        upActive := true
+        storeLine(upLines, upLine)
+    lastPL  := y2
+    lastPLi := x2
+
+// ───────── Alert ─────────
+alertcondition(breakUp, "Breakout garis downtrend", "Harga menembus garis downtrend ke atas (bullish breakout)")
+alertcondition(breakDn, "Breakdown garis uptrend", "Harga menembus garis uptrend ke bawah (bearish breakdown)")
