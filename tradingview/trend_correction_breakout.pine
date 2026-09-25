@@ -17,7 +17,9 @@ showStruct = input.bool(true, "Label HH / HL / LH / LL", group = grpT)
 showBg     = input.bool(true, "Warna background sesuai trend", group = grpT)
 
 grpC = "2. Trend Koreksi"
-minorLen   = input.int(4, "Pivot koreksi (kiri/kanan)", minval = 2, group = grpC)
+minorLeft  = input.int(4, "Pivot koreksi kiri", minval = 1, group = grpC)
+minorRight = input.int(2, "Pivot koreksi kanan (konfirmasi)", minval = 1, group = grpC,
+     tooltip = "Makin kecil, pivot koreksi makin cepat terkonfirmasi sehingga koreksi pendek juga tertangkap.")
 useWick    = input.bool(false, "Validasi garis pakai wick", group = grpC)
 tolAtr     = input.float(0.05, "Toleransi tembus (x ATR)", minval = 0, step = 0.05, group = grpC)
 minBars    = input.int(5, "Minimal panjang koreksi (bar)", minval = 1, group = grpC)
@@ -59,8 +61,8 @@ int emaTr = close > ema ? 1 : close < ema ? -1 : 0
 int trend = trendMode == "Struktur" ? structTr : trendMode == "EMA" ? emaTr : structTr == emaTr ? structTr : 0
 
 // ───────── Trend koreksi ─────────
-pph = ta.pivothigh(high, minorLen, minorLen)
-ppl = ta.pivotlow(low, minorLen, minorLen)
+pph = ta.pivothigh(high, minorLeft, minorRight)
+ppl = ta.pivotlow(low, minorLeft, minorRight)
 
 var int   aX      = na
 var float aY      = na
@@ -72,15 +74,26 @@ var float lY      = na
 var float cSlope  = na
 var bool  cActive = false
 
-validLine(int x1, float y1, float slope, int d) =>
+// garis valid jika tidak ada bar di antara kedua titik (x1..x2) yang menembusnya
+validLine(int x1, float y1, float slope, int d, int x2) =>
     bool ok = true
-    for i = 0 to bar_index - x1
+    for i = bar_index - x2 to bar_index - x1
         float lp  = y1 + slope * (bar_index - i - x1)
         float src = useWick ? (d == 1 ? high[i] : low[i]) : close[i]
         if d * (src - lp) > tol
             ok := false
             break
     ok
+
+// offset bar pertama setelah x2 yang CLOSE-nya menembus garis, -1 jika belum ada
+firstBreak(int x1, float y1, float slope, int d, int x2) =>
+    int res = -1
+    for i = bar_index - x2 - 1 to 0
+        float lp = y1 + slope * (bar_index - i - x1)
+        if d * (close[i] - lp) > tol
+            res := i
+            break
+    res
 
 if trend != nz(trend[1])
     if cActive
@@ -116,7 +129,7 @@ if cActive and d != 0
 
 float piv = d == 1 ? pph : d == -1 ? ppl : na
 if not na(piv)
-    int   x2 = bar_index - minorLen
+    int   x2 = bar_index - minorRight
     float y2 = piv
     if not na(aX) and bar_index - aX > maxAge
         aY := na
@@ -131,24 +144,33 @@ if not na(piv)
         float ay = na
         float sl = na
         float s1 = (y2 - aY) / (x2 - aX)
-        if validLine(aX, aY, s1, d)
+        if validLine(aX, aY, s1, d, x2)
             ax := aX
             ay := aY
             sl := s1
         else if not na(pY) and pX > aX and d * (pY - y2) > 0
             float s2 = (y2 - pY) / (x2 - pX)
-            if validLine(pX, pY, s2, d)
+            if validLine(pX, pY, s2, d, x2)
                 ax := pX
                 ay := pY
                 sl := s2
         if not na(sl)
             if cActive
                 line.delete(cLine)
-            cLine   := line.new(ax, ay, bar_index, ay + sl * (bar_index - ax), color = corrCol, width = lineW)
-            lX      := ax
-            lY      := ay
-            cSlope  := sl
-            cActive := true
+            int brk = firstBreak(ax, ay, sl, d, x2)
+            if brk < 0
+                cLine   := line.new(ax, ay, bar_index, ay + sl * (bar_index - ax), color = corrCol, width = lineW)
+                lX      := ax
+                lY      := ay
+                cSlope  := sl
+                cActive := true
+            else
+                cActive := false
+                int bx = bar_index - brk
+                if keepBroken and bx - aX >= minBars
+                    line.new(ax, ay, bx, ay + sl * (bx - ax), color = corrCol, width = lineW)
+                aX := na
+                aY := na
     pX := x2
     pY := y2
 
